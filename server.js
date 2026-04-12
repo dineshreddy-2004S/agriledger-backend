@@ -2,9 +2,6 @@
 process.on('uncaughtException', (err) => {
     console.error('CRITICAL UNCAUGHT ERROR:', err);
 });
-
-const express = require('express');
-const cors = require('cors');
 require('dotenv').config();
 
 // 2. Ensure CORS is open (The "Slash" issue we found earlier)
