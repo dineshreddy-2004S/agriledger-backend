@@ -1,44 +1,48 @@
-// 1. Add this at the VERY top of server.js (before anything else)
+require('dotenv').config(); // Allows local testing
+const express = require('express');
+const cors = require('cors');
+
+// --- 1. SILENT CRASH CATCHERS ---
+// This forces Render to tell us if it dies during startup
 process.on('uncaughtException', (err) => {
     console.error('CRITICAL UNCAUGHT ERROR:', err);
 });
-require('dotenv').config();
-
-// 2. Ensure CORS is open (The "Slash" issue we found earlier)
-const cors = require('cors');
-app.use(cors({ origin: '*' })); // Temporarily allow everything to bypass CORS blocks
-
-app.use(express.json());
-
-// 3. Add this test route to check if the server is even breathing
-app.get('/health', (req, res) => {
-    res.status(200).send("Server is alive");
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
-const authRoutes = require('./routes/authRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const farmerRoutes = require('./routes/farmerRoutes');
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// --- 2. MIDDLEWARE ---
+// The '*' fixes the Vercel CORS issue by allowing all frontend links
+app.use(cors({ origin: '*' })); 
+// This allows your server to read the email/password sent from React
+app.use(express.json()); 
 
-app.get('/api/test', (req, res) => {
-    console.log("Test endpoint hit!");
-    res.send("Backend is working!");
+// --- 3. HEALTH CHECK ---
+// A simple route to prove the server is alive
+app.get('/health', (req, res) => {
+    res.status(200).send("✅ Backend is alive, awake, and ready!");
 });
 
+// --- 4. IMPORT YOUR ROUTES ---
+// Based on your logs, you have an authRoutes file. 
+// (Adjust the path './routes/authRoutes' if your folder structure is different)
+const authRoutes = require('./routes/authRoutes'); 
 app.use('/api', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api', farmerRoutes);
 
+// --- 5. GLOBAL ERROR LOGGER ---
+// If the database fails, this catches the 500 error and PRINTS it to Render Logs
+app.use((err, req, res, next) => {
+    console.error("🔥 DATABASE/SERVER ERROR:", err.stack);
+    res.status(500).json({ 
+        message: "Internal Server Error", 
+        error: err.message 
+    });
+});
+
+// --- 6. START SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`✅ Farm Accounting Backend running on port ${PORT}`);
-});
-
-// 4. Add this at the VERY BOTTOM of server.js (after all routes)
-app.use((err, req, res, next) => {
-    console.error("SERVER ERROR LOG:", err.stack); // This prints to Render Logs
-    res.status(500).json({ error: "Internal Server Error", details: err.message });
+    console.log(`🚀 Server running successfully on port ${PORT}`);
 });
