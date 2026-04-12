@@ -11,6 +11,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.use(cors({
+    origin: 'https://agriledger-frontend-5gvvfqq9m-vdineshreddy7228-6134s-projects.vercel.app/', // Or '*' to allow everything for now
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json());
+
+app.get('/api/test', (req, res) => {
+    console.log("Test endpoint hit!");
+    res.send("Backend is working!");
+});
+
 app.use('/api', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', farmerRoutes);
