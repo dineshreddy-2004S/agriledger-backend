@@ -11,10 +11,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// This configuration allows both your specific Vercel URL AND 
+// any subdomains of vercel.app (optional) or just use '*' for testing.
 app.use(cors({
-    origin: 'https://agriledger-frontend-5gvvfqq9m-vdineshreddy7228-6134s-projects.vercel.app/', // Or '*' to allow everything for now
+    origin:'*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
 
 app.use(express.json());
