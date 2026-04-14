@@ -4,81 +4,114 @@ const { authenticateToken } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// GET /api/crops - Get all crops for the logged-in farmer
-router.get('/crops', authenticateToken, async (req, res) => {
-    try {
-        const [crops] = await db.query('SELECT * FROM crops WHERE user_id = ?', [req.user.id]);
-        res.json(crops);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch crops" });
-    }
-});
-
-// GET /api/transactions - Get recent transactions
+/**
+ * @route   GET /api/transactions
+ * @desc    Retrieve all transactions for the logged-in farmer.
+ * We JOIN with the crops table to ensure we only see transactions 
+ * for crops owned by this user.
+ */
 router.get('/transactions', authenticateToken, async (req, res) => {
     try {
-        const [txs] = await db.query(`
-            SELECT t.* FROM transactions t
+        const query = `
+            SELECT t.*, c.name as crop_name 
+            FROM transactions t
             JOIN crops c ON t.crop_id = c.id
             WHERE c.user_id = ?
             ORDER BY t.transaction_date DESC
-        `, [req.user.id]);
+        `;
+        const [txs] = await db.query(query, [req.user.id]);
         res.json(txs);
     } catch (error) {
+        console.error("Error fetching transactions:", error);
         res.status(500).json({ error: "Failed to fetch transactions" });
     }
 });
 
-// POST /api/crops - Add a new crop
-router.post('/crops', authenticateToken, async (req, res) => {
-    const { name, season } = req.body;
-    try {
-        const [result] = await db.query(
-            'INSERT INTO crops (user_id, name, season) VALUES (?, ?, ?)',
-            [req.user.id, name, season]
-        );
-        res.json({ message: "Crop added!", id: result.insertId });
-    } catch (error) {
-        res.status(500).json({ error: "Failed to add crop" });
-    }
-});
-
-// POST /api/transactions - Record income/expense
+/**
+ * @route   POST /api/transactions
+ * @desc    Add a new transaction. 
+ * Includes a security check to ensure the farmer owns the crop field.
+ */
 router.post('/transactions', authenticateToken, async (req, res) => {
     const { crop_id, type, category, amount, transaction_date, description } = req.body;
     
-    // Security check: Verify crop ownership
-    const [cropCheck] = await db.query('SELECT id FROM crops WHERE id = ? AND user_id = ?', [crop_id, req.user.id]);
-    if (cropCheck.length === 0) return res.status(403).json({ error: "Unauthorized access to this crop." });
-
     try {
-        await db.query(
-            'INSERT INTO transactions (crop_id, type, category, amount, transaction_date, description) VALUES (?, ?, ?, ?, ?, ?)',
-            [crop_id, type, category, amount, transaction_date, description]
-        );
-        res.json({ message: "Transaction recorded successfully" });
+        // SECURITY CHECK: Does this farmer actually own the crop they are trying to add a transaction to?
+        const [cropCheck] = await db.query('SELECT id FROM crops WHERE id = ? AND user_id = ?', [crop_id, req.user.id]);
+        
+        if (cropCheck.length === 0) {
+            return res.status(403).json({ error: "Unauthorized: You do not have access to this crop field." });
+        }
+
+        const query = `
+            INSERT INTO transactions (crop_id, type, category, amount, transaction_date, description) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        `;
+        await db.query(query, [crop_id, type, category, amount, transaction_date, description]);
+        
+        res.status(201).json({ message: "Transaction recorded successfully" });
     } catch (error) {
+        console.error("Error adding transaction:", error);
         res.status(500).json({ error: "Failed to record transaction" });
     }
 });
 
-// GET /api/reports - Financial breakdown per crop
-router.get('/reports', authenticateToken, async (req, res) => {
+/**
+ * @route   PUT /api/transactions/:id
+ * @desc    Update an existing transaction.
+ */
+router.put('/transactions/:id', authenticateToken, async (req, res) => {
+    const { crop_id, type, category, amount, transaction_date, description } = req.body;
+    const txId = req.params.id;
+
     try {
-        const query = `
-            SELECT 
-                c.id as crop_id, c.name, c.season,
-                SUM(CASE WHEN t.type = 'Income' THEN t.amount ELSE 0 END) as total_income,
-                SUM(CASE WHEN t.type = 'Expense' THEN t.amount ELSE 0 END) as total_expense
-            FROM crops c
-            LEFT JOIN transactions t ON c.id = t.crop_id
-            WHERE c.user_id = ?
-            GROUP BY c.id
+        // Verify ownership via JOIN before updating
+        const updateQuery = `
+            UPDATE transactions t
+            JOIN crops c ON t.crop_id = c.id
+            SET t.crop_id=?, t.type=?, t.category=?, t.amount=?, t.transaction_date=?, t.description=?
+            WHERE t.id=? AND c.user_id=?
         `;
-        const [report] = await db.query(query, [req.user.id]);
-        res.json(report);
+        
+        const [result] = await db.query(updateQuery, [
+            crop_id, type, category, amount, transaction_date, description, txId, req.user.id
+        ]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "Transaction not found or access denied." });
+        }
+
+        res.json({ message: "Transaction updated successfully" });
     } catch (error) {
-        res.status(500).json({ error: "Failed to generate report" });
+        console.error("Error updating transaction:", error);
+        res.status(500).json({ error: "Failed to update transaction" });
+    }
+});
+
+/**
+ * @route   DELETE /api/transactions/:id
+ * @desc    Delete a specific transaction.
+ */
+router.delete('/transactions/:id', authenticateToken, async (req, res) => {
+    const txId = req.params.id;
+    try {
+        // Verify ownership via JOIN before deleting
+        const deleteQuery = `
+            DELETE t FROM transactions t
+            JOIN crops c ON t.crop_id = c.id
+            WHERE t.id = ? AND c.user_id = ?
+        `;
+        
+        const [result] = await db.query(deleteQuery, [txId, req.user.id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "Transaction not found or access denied." });
+        }
+
+        res.json({ message: "Transaction deleted successfully" });
+    } catch (error) {
+        console.error("Error deleting transaction:", error);
+        res.status(500).json({ error: "Failed to delete transaction" });
     }
 });
 
