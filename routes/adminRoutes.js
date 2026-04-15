@@ -9,7 +9,7 @@ const router = express.Router();
  * @desc    Fetch all users with the role 'farmer'
  * @access  Private (Admin Only)
  */
-router.get('/users', authenticateToken, authenticateAdmin, async (req, res) => {
+router.get('api/admin/users', authenticateToken, authenticateAdmin, async (req, res) => {
     try {
         const [users] = await db.query(
             'SELECT id, name, email, role, is_approved, created_at FROM users WHERE role = "farmer"'
