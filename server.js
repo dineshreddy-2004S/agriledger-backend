@@ -13,41 +13,52 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // --- 2. MIDDLEWARE ---
-app.use(cors({ origin: '*' })); // Allows your Vercel frontend to talk to this backend
-app.use(express.json());        // Allows the server to read JSON data from the frontend
+app.use(cors({ origin: '*' }));
+app.use(express.json());
 
-// --- 3. HEALTH CHECK ---
+// --- 3. IMPORT ROUTES WITH SAFETY CHECKS ---
+// If these paths are wrong, Render will show "FAILED TO LOAD" in logs.
+const loadRoute = (path) => {
+    try {
+        const route = require(path);
+        if (!route || typeof route !== 'function') {
+            console.error(`❌ ROUTE ERROR: ${path} did not export a Router function!`);
+            return null;
+        }
+        return route;
+    } catch (err) {
+        console.error(`❌ FAILED TO LOAD ROUTE FILE: ${path}`);
+        console.error(err.message);
+        return null;
+    }
+};
+
+const authRoutes = loadRoute('./routes/authRoutes');
+const adminRoutes = loadRoute('./routes/adminRoutes');
+const farmerRoutes = loadRoute('./routes/farmerRoutes');
+
+// --- 4. WIRING UP ROUTES ---
+// We check if the route exists before using it to prevent the "handler must be a function" crash
+if (authRoutes) app.use('/api', authRoutes);
+if (adminRoutes) app.use('/api/admin', adminRoutes);
+if (farmerRoutes) app.use('/api', farmerRoutes);
+
+// --- 5. HEALTH CHECK ---
 app.get('/health', (req, res) => {
     res.status(200).send("✅ Backend is alive and routing perfectly!");
 });
 
-// --- 4. IMPORT YOUR ROUTE FILES ---
-// NOTE: This assumes your files are inside a folder named "routes"
-// If they are in the same folder as server.js, change './routes/' to './'
-const authRoutes = require('./routes/authRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const addTransactions = require('./routes/addTransactions');
-const farmerRoutes = require('./routes/farmerRoutes');
-
-// --- 5. CONNECT ROUTES TO THE '/api' URL ---
-// Every time a request starts with '/api', Express will check these files
-app.use('/api', authRoutes);
-app.use('/api', adminRoutes);
-app.use('/api', addTransactions);
-app.use('/api', farmerRoutes);
-
 // --- 6. GLOBAL ERROR LOGGER ---
-// Catches any database crashes and prints them to the Render logs
 app.use((err, req, res, next) => {
-    console.error("🔥 DATABASE/SERVER ERROR:", err.stack);
+    console.error("🔥 SERVER ERROR:", err.stack);
     res.status(500).json({ 
         message: "Internal Server Error", 
         error: err.message 
     });
 });
 
-// --- 7. START SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running successfully on port ${PORT}`);
 });
+
