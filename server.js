@@ -13,22 +13,33 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // --- 2. MIDDLEWARE ---
-app.use(cors({ origin: '*' }));
-app.use(express.json());
+app.use(cors({ origin: '*' })); 
+app.use(express.json());        
 
-// --- 3. IMPORT ROUTES WITH SAFETY CHECKS ---
-// If these paths are wrong, Render will show "FAILED TO LOAD" in logs.
+// --- 3. REQUEST LOGGER ---
+app.use((req, res, next) => {
+    console.log(`📡 [${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
+// --- 4. IMPORT ROUTES WITH SAFETY CHECKS ---
 const loadRoute = (path) => {
     try {
         const route = require(path);
         if (!route || typeof route !== 'function') {
-            console.error(`❌ ROUTE ERROR: ${path} did not export a Router function!`);
+            console.error(`❌ ROUTE ERROR: ${path} did not export a Router!`);
             return null;
         }
+        console.log(`✅ Successfully loaded route: ${path}`);
         return route;
     } catch (err) {
         console.error(`❌ FAILED TO LOAD ROUTE FILE: ${path}`);
-        console.error(err.message);
+        console.error("Reason:", err.message);
+        
+        // This specific error means there is a typo or undefined middleware inside the route file
+        if (err.message.includes("argument handler must be a function")) {
+            console.error(`💡 FIX: Check ${path}. One of your middlewares (like authenticateToken) is likely undefined or imported incorrectly.`);
+        }
         return null;
     }
 };
@@ -37,18 +48,17 @@ const authRoutes = loadRoute('./routes/authRoutes');
 const adminRoutes = loadRoute('./routes/adminRoutes');
 const farmerRoutes = loadRoute('./routes/farmerRoutes');
 
-// --- 4. WIRING UP ROUTES ---
-// We check if the route exists before using it to prevent the "handler must be a function" crash
-if (authRoutes) app.use('/api', authRoutes);
+// --- 5. WIRING UP ROUTES ---
 if (adminRoutes) app.use('/api/admin', adminRoutes);
+if (authRoutes) app.use('/api', authRoutes);
 if (farmerRoutes) app.use('/api', farmerRoutes);
 
-// --- 5. HEALTH CHECK ---
+// --- 6. HEALTH CHECK ---
 app.get('/health', (req, res) => {
     res.status(200).send("✅ Backend is alive and routing perfectly!");
 });
 
-// --- 6. GLOBAL ERROR LOGGER ---
+// --- 7. GLOBAL ERROR LOGGER ---
 app.use((err, req, res, next) => {
     console.error("🔥 SERVER ERROR:", err.stack);
     res.status(500).json({ 
@@ -57,8 +67,8 @@ app.use((err, req, res, next) => {
     });
 });
 
+// --- 8. START SERVER ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running successfully on port ${PORT}`);
 });
-
