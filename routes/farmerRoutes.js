@@ -42,6 +42,7 @@ router.delete('/crops/:id', authenticateToken, async (req, res) => {
 
 // ======================= TRANSACTIONS =======================
 
+// GET: Fetch all transactions for the logged-in farmer
 router.get('/transactions', authenticateToken, async (req, res) => {
     try {
         const query = `
@@ -59,25 +60,51 @@ router.get('/transactions', authenticateToken, async (req, res) => {
     }
 });
 
+// POST: Add a new transaction
 router.post('/transactions', authenticateToken, async (req, res) => {
     const { crop_id, type, category, amount, transaction_date, description } = req.body;
     try {
-        // Security check: Ensure the user owns the crop
+        // 1. Security check: Ensure the user owns the crop
         const [crop] = await db.query('SELECT id FROM crops WHERE id = ? AND user_id = ?', [crop_id, req.user.id]);
-        if (crop.length === 0) return res.status(403).json({ error: "Unauthorized access to this crop field." });
+        if (crop.length === 0) {
+            return res.status(403).json({ error: "Unauthorized access to this crop field." });
+        }
 
-        await db.query(
-            'INSERT INTO transactions (crop_id, type, category, amount, transaction_date, description) VALUES (?, ?, ?, ?, ?, ?)',
-            [crop_id, type, category, amount, transaction_date, description]
-        );
-        // Important: Send only ONE response and return immediately
+        // 2. Insert into DB: Including user_id column
+        const query = `
+            INSERT INTO transactions (user_id, crop_id, type, category, amount, transaction_date, description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+        await db.query(query, [req.user.id, crop_id, type, category, amount, transaction_date, description]);
+        
         return res.status(201).json({ message: "Transaction recorded successfully" });
     } catch (error) {
         console.error("Post Transaction Error:", error);
-        return res.status(500).json({ error: "Failed to record transaction" });
+        return res.status(500).json({ 
+            error: "Failed to record transaction", 
+            details: error.message 
+        });
     }
 });
 
+// PUT: Update an existing transaction
+router.put('/transactions/:id', authenticateToken, async (req, res) => {
+    const { crop_id, type, category, amount, transaction_date, description } = req.body;
+    try {
+        const query = `
+            UPDATE transactions t
+            JOIN crops c ON t.crop_id = c.id
+            SET t.crop_id=?, t.type=?, t.category=?, t.amount=?, t.transaction_date=?, t.description=?
+            WHERE t.id=? AND c.user_id=?
+        `;
+        await db.query(query, [crop_id, type, category, amount, transaction_date, description, req.params.id, req.user.id]);
+        res.json({ message: "Transaction updated" });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to update transaction" });
+    }
+});
+
+// DELETE: Remove a transaction
 router.delete('/transactions/:id', authenticateToken, async (req, res) => {
     try {
         const query = `
@@ -88,10 +115,10 @@ router.delete('/transactions/:id', authenticateToken, async (req, res) => {
         await db.query(query, [req.params.id, req.user.id]);
         res.json({ message: "Transaction deleted" });
     } catch (error) {
-        console.error("Delete Transaction Error:", error);
         res.status(500).json({ error: "Failed to delete transaction" });
     }
 });
+
 
 // ======================= LEDGERS =======================
 
