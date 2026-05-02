@@ -77,7 +77,7 @@ router.post('/forgot-password', async (req, res) => {
         
         // Generate a temporary reset token (valid for 15 mins)
         const resetToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '15m' });
-        const resetLink = `https://agriledger-frontend-nala20qvy-vdineshreddy7228-6134s-projects.vercel.app/reset-password?token=${resetToken}`; // Make sure this matches your frontend URL
+        const resetLink = `https://agriledger-frontend.vercel.app/reset-password?token=${resetToken}`; // Make sure this matches your frontend URL
 
         // Send the email
         const mailOptions = {
