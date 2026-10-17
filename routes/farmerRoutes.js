@@ -30,6 +30,26 @@ router.post('/crops', authenticateToken, async (req, res) => {
     }
 });
 
+// PUT: Update an existing crop name & season
+router.put('/crops/:id', authenticateToken, async (req, res) => {
+    const { name, season } = req.body;
+    if (!name) return res.status(400).json({ error: "Crop name is required" });
+    try {
+        const [check] = await db.query('SELECT id FROM crops WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+        if (check.length === 0) {
+            return res.status(403).json({ error: "Unauthorized access to this crop." });
+        }
+        await db.query(
+            'UPDATE crops SET name = ?, season = ? WHERE id = ? AND user_id = ?',
+            [name, season || '', req.params.id, req.user.id]
+        );
+        res.json({ message: "Crop updated successfully" });
+    } catch (error) {
+        console.error("Update Crop Error:", error);
+        res.status(500).json({ error: "Failed to update crop" });
+    }
+});
+
 router.delete('/crops/:id', authenticateToken, async (req, res) => {
     try {
         await db.query('DELETE FROM crops WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
@@ -118,7 +138,6 @@ router.delete('/transactions/:id', authenticateToken, async (req, res) => {
         res.status(500).json({ error: "Failed to delete transaction" });
     }
 });
-
 
 // ======================= LEDGERS =======================
 
