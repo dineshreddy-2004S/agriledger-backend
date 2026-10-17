@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.get('/crops', authenticateToken, async (req, res) => {
     try {
-        const [crops] = await db.query('SELECT * FROM crops WHERE user_id = ?', [req.user.id]);
+        const [crops] = await db.query('SELECT * FROM crops WHERE user_id = ? ORDER BY created_at DESC', [req.user.id]);
         res.json(crops);
     } catch (error) {
         console.error("Fetch Crops Error:", error);
@@ -30,20 +30,24 @@ router.post('/crops', authenticateToken, async (req, res) => {
     }
 });
 
-// PUT: Update an existing crop name & season
+// PUT: Update crop name, season, and status (Active <-> Completed)
 router.put('/crops/:id', authenticateToken, async (req, res) => {
-    const { name, season } = req.body;
-    if (!name) return res.status(400).json({ error: "Crop name is required" });
+    const { name, season, status } = req.body;
     try {
-        const [check] = await db.query('SELECT id FROM crops WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+        const [check] = await db.query('SELECT * FROM crops WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
         if (check.length === 0) {
             return res.status(403).json({ error: "Unauthorized access to this crop." });
         }
+
+        const updatedName = name !== undefined ? name : check[0].name;
+        const updatedSeason = season !== undefined ? season : check[0].season;
+        const updatedStatus = status !== undefined ? status : check[0].status;
+
         await db.query(
-            'UPDATE crops SET name = ?, season = ? WHERE id = ? AND user_id = ?',
-            [name, season || '', req.params.id, req.user.id]
+            'UPDATE crops SET name = ?, season = ?, status = ? WHERE id = ? AND user_id = ?',
+            [updatedName, updatedSeason, updatedStatus, req.params.id, req.user.id]
         );
-        res.json({ message: "Crop updated successfully" });
+        res.json({ message: "Crop updated successfully", status: updatedStatus });
     } catch (error) {
         console.error("Update Crop Error:", error);
         res.status(500).json({ error: "Failed to update crop" });
@@ -62,7 +66,6 @@ router.delete('/crops/:id', authenticateToken, async (req, res) => {
 
 // ======================= TRANSACTIONS =======================
 
-// GET: Fetch all transactions for the logged-in farmer
 router.get('/transactions', authenticateToken, async (req, res) => {
     try {
         const query = `
@@ -70,7 +73,7 @@ router.get('/transactions', authenticateToken, async (req, res) => {
             FROM transactions t
             JOIN crops c ON t.crop_id = c.id
             WHERE c.user_id = ?
-            ORDER BY t.transaction_date DESC
+            ORDER BY t.transaction_date DESC, t.id DESC
         `;
         const [txs] = await db.query(query, [req.user.id]);
         res.json(txs);
@@ -80,23 +83,19 @@ router.get('/transactions', authenticateToken, async (req, res) => {
     }
 });
 
-// POST: Add a new transaction
 router.post('/transactions', authenticateToken, async (req, res) => {
     const { crop_id, type, category, amount, transaction_date, description } = req.body;
     try {
-        // 1. Security check: Ensure the user owns the crop
         const [crop] = await db.query('SELECT id FROM crops WHERE id = ? AND user_id = ?', [crop_id, req.user.id]);
         if (crop.length === 0) {
             return res.status(403).json({ error: "Unauthorized access to this crop field." });
         }
 
-        // 2. Insert into DB: Including user_id column
         const query = `
             INSERT INTO transactions (user_id, crop_id, type, category, amount, transaction_date, description) 
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         await db.query(query, [req.user.id, crop_id, type, category, amount, transaction_date, description]);
-        
         return res.status(201).json({ message: "Transaction recorded successfully" });
     } catch (error) {
         console.error("Post Transaction Error:", error);
@@ -107,7 +106,6 @@ router.post('/transactions', authenticateToken, async (req, res) => {
     }
 });
 
-// PUT: Update an existing transaction
 router.put('/transactions/:id', authenticateToken, async (req, res) => {
     const { crop_id, type, category, amount, transaction_date, description } = req.body;
     try {
@@ -120,11 +118,11 @@ router.put('/transactions/:id', authenticateToken, async (req, res) => {
         await db.query(query, [crop_id, type, category, amount, transaction_date, description, req.params.id, req.user.id]);
         res.json({ message: "Transaction updated" });
     } catch (error) {
+        console.error("Update Transaction Error:", error);
         res.status(500).json({ error: "Failed to update transaction" });
     }
 });
 
-// DELETE: Remove a transaction
 router.delete('/transactions/:id', authenticateToken, async (req, res) => {
     try {
         const query = `
@@ -135,6 +133,7 @@ router.delete('/transactions/:id', authenticateToken, async (req, res) => {
         await db.query(query, [req.params.id, req.user.id]);
         res.json({ message: "Transaction deleted" });
     } catch (error) {
+        console.error("Delete Transaction Error:", error);
         res.status(500).json({ error: "Failed to delete transaction" });
     }
 });
